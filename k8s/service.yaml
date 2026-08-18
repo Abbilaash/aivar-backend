@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aivar-backend
+  namespace: default
+  labels:
+    app: aivar-backend
+spec:
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: aivar-backend
+  type: ClusterIP
