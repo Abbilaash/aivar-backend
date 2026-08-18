@@ -67,14 +67,24 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 Open [http://localhost:8000/docs](http://localhost:8000/docs) in your browser to view the OpenAPI docs.
 
+### 3. Initialize Database Schema (Supabase)
+Instead of using Alembic locally, you can create all necessary tables directly in your Supabase project:
+1. Open your **Supabase Dashboard**.
+2. Select your project and navigate to the **SQL Editor** tab.
+3. Open the file [db_schema.sql](file:///a:/HACKATHONS/AIVAR%20Hackathon/backend/db_schema.sql).
+4. Copy the SQL statements and paste them into the Supabase SQL editor.
+5. Click **Run** to create the tables.
+
 ---
 
 ## Local Run with Docker Compose
-If you want to run a local postgres DB along with the backend without manually setting up Python:
-```bash
-docker compose up --build
-```
-This automatically configures a local Postgres container and runs the database migrations.
+To run the backend application locally inside a container using Docker Compose:
+1. Copy the `.env` file or export your `DATABASE_URL` environment variable.
+2. Run:
+   ```bash
+   docker compose up --build
+   ```
+   *Note: This utilizes the database configured under `DATABASE_URL` in your `.env`.*
 
 ---
 

@@ -1,23 +1,6 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: aivar-postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
-      POSTGRES_DB: aivar
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d aivar"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   aivar-backend:
     build:
       context: .
@@ -26,16 +9,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@postgres:5432/aivar
+      # Inject the DATABASE_URL to connect directly to Supabase PostgreSQL from local .env
+      - DATABASE_URL=${DATABASE_URL}
       - APP_ENV=development
       - LOG_LEVEL=INFO
       - API_KEY=aivar-dev-secret-key-12345
       - WATCHER_ENABLED=false # Disable watcher by default for local compose without cluster permissions
       - CLUSTER_NAME=local-docker-compose
       - CLUSTER_ENVIRONMENT=development
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-volumes:
-  pgdata:
