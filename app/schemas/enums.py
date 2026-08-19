@@ -16,6 +16,10 @@ class RiskTier(str, Enum):
 class AssetStatus(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
+    AVAILABLE = "available"
+    PROGRESSING = "progressing"
+    DEGRADED = "degraded"
+    PENDING = "pending"
 
 
 class DiscoveryEventType(str, Enum):

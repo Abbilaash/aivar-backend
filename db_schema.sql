@@ -8,6 +8,18 @@ CREATE TABLE IF NOT EXISTS clusters (
     environment VARCHAR(100) NOT NULL,
     api_server VARCHAR(512) NOT NULL,
     status VARCHAR(50) DEFAULT 'active' NOT NULL,
+    
+    -- Dynamic Multi-Cluster Configurations
+    connection_type VARCHAR(50) DEFAULT 'kubeconfig' NOT NULL,
+    kube_context VARCHAR(255),
+    aws_region VARCHAR(100),
+    eks_cluster_name VARCHAR(255),
+    watch_enabled BOOLEAN DEFAULT false NOT NULL,
+    connection_status VARCHAR(50) DEFAULT 'disabled' NOT NULL,
+    last_sync_at TIMESTAMP WITH TIME ZONE,
+    last_error TEXT,
+    credential_reference VARCHAR(255),
+    
     last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
@@ -59,3 +71,13 @@ CREATE TABLE IF NOT EXISTS alerts (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     resolved_at TIMESTAMP WITH TIME ZONE
 );
+
+-- 5. Create users table
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    monitored_namespaces JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+

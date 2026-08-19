@@ -8,7 +8,6 @@ AIVAR automatically monitors Kubernetes workloads, detects AI-related deployment
 - **Python**: 3.12
 - **Framework**: FastAPI (Asynchronous)
 - **Database ORM**: SQLAlchemy 2.0 Async ORM + asyncpg
-- **Migrations**: Alembic
 - **Monitoring**: Kubernetes Python client watcher & Prometheus metrics
 - **Database Engine**: PostgreSQL (Supabase)
 

@@ -5,7 +5,7 @@ from sqlalchemy.sql import text
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 
 from app.db.session import get_db_session
-from app.workers.lifespan import watcher
+from app.discovery.manager import watch_manager
 
 router = APIRouter(tags=["monitoring"])
 
@@ -42,7 +42,9 @@ async def readyz(db: AsyncSession = Depends(get_db_session)):
     return {
         "status": "ready",
         "database": "connected",
-        "kubernetes_watcher_enabled": watcher.k8s_configured
+        "cluster_watch_manager_running": watch_manager._running,
+        "active_cluster_watchers": len(watch_manager.watchers),
+        "active_cluster_ids": [str(cluster_id) for cluster_id in watch_manager.watchers],
     }
 
 

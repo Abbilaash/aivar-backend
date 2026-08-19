@@ -23,6 +23,9 @@ class AssetBase(BaseModel):
 class AssetCreate(AssetBase):
     cluster_id: UUID
     workload_uid: str = Field(..., max_length=255)
+    status: Optional[AssetStatus] = None
+    last_active_at: Optional[datetime] = None
+
 
 
 class AssetUpdate(BaseModel):

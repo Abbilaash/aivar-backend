@@ -20,6 +20,21 @@ class AssetRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def get_by_name_kind_namespace(
+        self, cluster_id: uuid.UUID, name: str, kind: str, namespace: str
+    ) -> Optional[Asset]:
+        stmt = select(Asset).where(
+            and_(
+                Asset.cluster_id == cluster_id,
+                Asset.workload_name == name,
+                Asset.workload_kind == kind,
+                Asset.namespace == namespace
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+
     async def list_filtered(
         self,
         cluster_id: Optional[uuid.UUID] = None,
@@ -29,13 +44,19 @@ class AssetRepository:
         owner: Optional[str] = None,
         status: Optional[str] = None,
         search: Optional[str] = None,
+        updated_after: Optional[datetime] = None,
         skip: int = 0,
-        limit: int = 100
+        limit: int = 100,
+        username: Optional[str] = None
     ) -> Tuple[List[Asset], int]:
+        from app.models.cluster import Cluster
         stmt = select(Asset)
         
         # Apply filters
         filters = []
+        if username:
+            stmt = stmt.join(Cluster)
+            filters.append(or_(Cluster.created_by == username, Cluster.created_by == None))
         if cluster_id is not None:
             filters.append(Asset.cluster_id == cluster_id)
         if namespace is not None:
@@ -48,6 +69,9 @@ class AssetRepository:
             filters.append(Asset.owner == owner)
         if status is not None:
             filters.append(Asset.status == status)
+        if updated_after is not None:
+            filters.append(Asset.updated_at >= updated_after)
+
             
         if search:
             search_clause = or_(
@@ -71,6 +95,7 @@ class AssetRepository:
         return list(results.scalars().all()), total_count
 
     async def create(self, schema: AssetCreate) -> Asset:
+        from sqlalchemy.exc import IntegrityError
         asset = Asset(
             cluster_id=schema.cluster_id,
             workload_uid=schema.workload_uid,
@@ -86,12 +111,83 @@ class AssetRepository:
             risk_reasons=schema.risk_reasons,
             detection_confidence=schema.detection_confidence,
             detection_evidence=schema.detection_evidence,
-            status="active"
+            status=schema.status.value if (schema.status and hasattr(schema.status, 'value')) else (schema.status or "active"),
+            last_active_at=schema.last_active_at or datetime.now(timezone.utc)
         )
-        self.session.add(asset)
+
+        try:
+            self.session.add(asset)
+            await self.session.commit()
+            await self.session.refresh(asset)
+            return asset
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.get_by_cluster_workload(schema.cluster_id, schema.workload_uid)
+            if existing:
+                update_schema = AssetUpdate(
+                    asset_name=schema.asset_name,
+                    asset_type=schema.asset_type,
+                    namespace=schema.namespace,
+                    image_references=schema.image_references,
+                    owner=schema.owner,
+                    owner_source=schema.owner_source,
+                    risk_tier=schema.risk_tier,
+                    risk_reasons=schema.risk_reasons,
+                    detection_confidence=schema.detection_confidence,
+                    detection_evidence=schema.detection_evidence,
+                    status=schema.status if (schema.status and hasattr(schema.status, 'value')) else (schema.status or "active"),
+                    last_active_at=schema.last_active_at or datetime.now(timezone.utc)
+                )
+                return await self.update(existing, update_schema)
+            raise
+
+    async def upsert(self, schema: AssetCreate) -> Asset:
+        from sqlalchemy.dialects.postgresql import insert
+        
+        insert_stmt = insert(Asset).values(
+            id=uuid.uuid4(),
+            cluster_id=schema.cluster_id,
+            workload_uid=schema.workload_uid,
+            asset_name=schema.asset_name,
+            asset_type=schema.asset_type.value if hasattr(schema.asset_type, 'value') else schema.asset_type,
+            namespace=schema.namespace,
+            workload_kind=schema.workload_kind,
+            workload_name=schema.workload_name,
+            image_references=schema.image_references,
+            owner=schema.owner,
+            owner_source=schema.owner_source,
+            risk_tier=schema.risk_tier.value if hasattr(schema.risk_tier, 'value') else schema.risk_tier,
+            risk_reasons=schema.risk_reasons,
+            detection_confidence=schema.detection_confidence,
+            detection_evidence=schema.detection_evidence,
+            status=schema.status.value if (schema.status and hasattr(schema.status, 'value')) else (schema.status or "active"),
+            last_active_at=schema.last_active_at or datetime.now(timezone.utc)
+        )
+        
+        update_cols = {
+            'asset_name': insert_stmt.excluded.asset_name,
+            'asset_type': insert_stmt.excluded.asset_type,
+            'namespace': insert_stmt.excluded.namespace,
+            'image_references': insert_stmt.excluded.image_references,
+            'owner': insert_stmt.excluded.owner,
+            'owner_source': insert_stmt.excluded.owner_source,
+            'risk_tier': insert_stmt.excluded.risk_tier,
+            'risk_reasons': insert_stmt.excluded.risk_reasons,
+            'detection_confidence': insert_stmt.excluded.detection_confidence,
+            'detection_evidence': insert_stmt.excluded.detection_evidence,
+            'status': insert_stmt.excluded.status,
+            'last_active_at': insert_stmt.excluded.last_active_at,
+            'updated_at': datetime.now(timezone.utc)
+        }
+        
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            index_elements=['cluster_id', 'workload_uid'],
+            set_=update_cols
+        ).returning(Asset)
+        
+        result = await self.session.execute(upsert_stmt)
         await self.session.commit()
-        await self.session.refresh(asset)
-        return asset
+        return result.scalars().first()
 
     async def update(self, asset: Asset, schema: AssetUpdate) -> Asset:
         update_data = schema.model_dump(exclude_unset=True)
@@ -107,7 +203,10 @@ class AssetRepository:
         await self.session.refresh(asset)
         return asset
 
-    async def list_recent_changes(self, since: datetime) -> List[Asset]:
-        stmt = select(Asset).where(Asset.updated_at >= since).order_by(Asset.updated_at.desc())
-        result = await self.session.execute(stmt)
+    async def list_recent_changes(self, since: datetime, username: Optional[str] = None) -> List[Asset]:
+        stmt = select(Asset).where(Asset.updated_at >= since)
+        if username:
+            from app.models.cluster import Cluster
+            stmt = stmt.join(Cluster).where(or_(Cluster.created_by == username, Cluster.created_by == None))
+        result = await self.session.execute(stmt.order_by(Asset.updated_at.desc()))
         return list(result.scalars().all())

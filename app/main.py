@@ -8,13 +8,17 @@ from app.api.v1.assets import router as assets_router
 from app.api.v1.alerts import router as alerts_router
 from app.api.v1.clusters import router as clusters_router
 from app.api.v1.changes import router as changes_router
+from app.api.v1.auth import router as auth_router
+from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.monitoring import router as monitoring_router
+from app.api.v1.copilot import router as copilot_router
 
 logger = logging.getLogger(__name__)
 
+
+
 app = FastAPI(
-    title="AIVAR — Autonomous AI Asset Registry",
-    version="1.0.0",
+    title="AIVAR — AI Visibility & Asset Registry",
     description="A centralized system for detecting, registering, and monitoring AI workloads on Kubernetes.",
     lifespan=lifespan
 )
@@ -34,6 +38,11 @@ app.include_router(assets_router, prefix="/api/v1")
 app.include_router(alerts_router, prefix="/api/v1")
 app.include_router(clusters_router, prefix="/api/v1")
 app.include_router(changes_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(copilot_router, prefix="/api/v1")
+
+
 
 # Monitoring routes mounted directly at root
 app.include_router(monitoring_router)

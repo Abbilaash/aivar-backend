@@ -47,9 +47,11 @@ class AssetService:
         Receives normalized DiscoveryMessage, runs detector, updates/creates asset,
         logs discovery events, and creates unassigned alerts.
         """
-        cluster_id = await self.get_or_create_cluster(msg.cluster_name)
+        cluster_id = msg.cluster_id
+        await self.cluster_repo.update_last_seen(cluster_id)
         
         is_ai, asset_type, confidence, evidence = AIDetector.detect(msg)
+
         if not is_ai:
             # If the workload was previously tracked, we might want to deactivate it
             existing = await self.asset_repo.get_by_cluster_workload(cluster_id, msg.workload_uid)
@@ -68,6 +70,15 @@ class AssetService:
             before_snapshot = self._build_snapshot(existing)
             
             # Update the asset
+            status_val = AssetStatus.INACTIVE
+            if msg.status:
+                try:
+                    status_val = AssetStatus(msg.status)
+                except ValueError:
+                    status_val = AssetStatus.ACTIVE if msg.is_active else AssetStatus.INACTIVE
+            else:
+                status_val = AssetStatus.ACTIVE if msg.is_active else AssetStatus.INACTIVE
+
             update_schema = AssetUpdate(
                 asset_name=msg.workload_name,
                 asset_type=asset_type,
@@ -79,9 +90,10 @@ class AssetService:
                 risk_reasons=risk_reasons,
                 detection_confidence=confidence,
                 detection_evidence=evidence,
-                status=AssetStatus.ACTIVE,
-                last_active_at=datetime.now(timezone.utc)
+                status=status_val,
+                last_active_at=datetime.now(timezone.utc) if msg.is_active else existing.last_active_at
             )
+
             
             updated_asset = await self.asset_repo.update(existing, update_schema)
             after_snapshot = self._build_snapshot(updated_asset)
@@ -117,6 +129,15 @@ class AssetService:
 
         else:
             # Create new Asset
+            create_status_val = AssetStatus.INACTIVE
+            if msg.status:
+                try:
+                    create_status_val = AssetStatus(msg.status)
+                except ValueError:
+                    create_status_val = AssetStatus.ACTIVE if msg.is_active else AssetStatus.INACTIVE
+            else:
+                create_status_val = AssetStatus.ACTIVE if msg.is_active else AssetStatus.INACTIVE
+
             create_schema = AssetCreate(
                 cluster_id=cluster_id,
                 workload_uid=msg.workload_uid,
@@ -131,10 +152,13 @@ class AssetService:
                 risk_tier=risk_tier,
                 risk_reasons=risk_reasons,
                 detection_confidence=confidence,
-                detection_evidence=evidence
+                detection_evidence=evidence,
+                status=create_status_val,
+                last_active_at=datetime.now(timezone.utc) if msg.is_active else None
             )
+
             
-            new_asset = await self.asset_repo.create(create_schema)
+            new_asset = await self.asset_repo.upsert(create_schema)
             after_snapshot = self._build_snapshot(new_asset)
 
             # Create DiscoveryEvent
@@ -156,7 +180,7 @@ class AssetService:
         Deactivates an asset when deleted or no longer containing AI components.
         """
         asset = await self.asset_repo.get_by_cluster_workload(cluster_id, workload_uid)
-        if asset and asset.status == "active":
+        if asset and asset.status != "inactive":
             before_snapshot = self._build_snapshot(asset)
             update_schema = AssetUpdate(status=AssetStatus.INACTIVE)
             updated_asset = await self.asset_repo.update(asset, update_schema)

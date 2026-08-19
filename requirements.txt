@@ -4,8 +4,8 @@ pydantic==2.7.4
 pydantic-settings==2.3.4
 sqlalchemy==2.0.31
 asyncpg==0.29.0
-alembic==1.13.1
 kubernetes==30.1.0
+
 PyYAML==6.0.1
 prometheus-client==0.20.0
 pytest==8.2.2

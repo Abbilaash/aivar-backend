@@ -1,14 +1,10 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.discovery.watcher import DiscoveryWatcher
+from app.discovery.manager import watch_manager
 from app.core.logging import setup_logging
 
 logger = logging.getLogger(__name__)
-
-# Global watcher instance
-watcher = DiscoveryWatcher()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,11 +12,11 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("Initializing AIVAR application components...")
     
-    # Start Kubernetes Watcher background task
-    await watcher.start()
+    # Start database-driven, multi-cluster Kubernetes watch orchestration.
+    await watch_manager.start()
     
     yield
     
     # 2. Shutdown phase
     logger.info("Shutting down AIVAR application components...")
-    await watcher.stop()
+    await watch_manager.stop()

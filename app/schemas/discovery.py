@@ -11,9 +11,13 @@ class ContainerInfo(BaseModel):
     volume_mounts: List[str] = Field(default_factory=list)
 
 
+from uuid import UUID
+
 class DiscoveryMessage(BaseModel):
+    cluster_id: UUID
     cluster_name: str = Field(..., max_length=255)
     workload_uid: str = Field(..., max_length=255)
+
     workload_kind: str = Field(..., max_length=100)
     workload_name: str = Field(..., max_length=255)
     namespace: str = Field(..., max_length=255)
@@ -24,3 +28,7 @@ class DiscoveryMessage(BaseModel):
     service_account_name: Optional[str] = Field(None, max_length=255)
     secret_references: List[str] = Field(default_factory=list)
     configmap_references: List[str] = Field(default_factory=list)
+    namespace_labels: Dict[str, str] = Field(default_factory=dict)
+    is_active: bool = Field(default=True)
+    status: str = Field(default="active", max_length=50)
+

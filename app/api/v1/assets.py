@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
@@ -31,10 +31,24 @@ async def list_assets(
     owner: Optional[str] = Query(None, description="Filter by owner"),
     status: Optional[AssetStatus] = Query(None, description="Filter by status (active, inactive)"),
     search: Optional[str] = Query(None, description="Search term for asset/workload name or owner"),
+    updated_after: Optional[str] = Query(None, description="Filter by updated after ISO-8601 string"),
     skip: int = Query(0, ge=0, description="Offset index for pagination"),
     limit: int = Query(100, ge=1, le=1000, description="Limit count for pagination"),
+    x_user_username: Optional[str] = Header(None, alias="X-User-Username"),
     db: AsyncSession = Depends(get_db_session)
 ):
+    updated_after_dt = None
+    if updated_after:
+        try:
+            from datetime import datetime
+            iso_str = updated_after.replace("Z", "+00:00")
+            updated_after_dt = datetime.fromisoformat(iso_str)
+        except ValueError as err:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid updated_after format: {err}"
+            )
+
     repo = AssetRepository(db)
     assets, _ = await repo.list_filtered(
         cluster_id=cluster_id,
@@ -44,10 +58,13 @@ async def list_assets(
         owner=owner,
         status=status.value if status else None,
         search=search,
+        updated_after=updated_after_dt,
         skip=skip,
-        limit=limit
+        limit=limit,
+        username=x_user_username
     )
     return assets
+
 
 
 @router.get(

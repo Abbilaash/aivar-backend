@@ -59,6 +59,8 @@ class AIDetector:
 
         # Check annotation keys and values
         for k, v in msg.annotations.items():
+            if k.startswith("kubernetes.io/") or k.startswith("kubectl.kubernetes.io/") or k == "deployment.kubernetes.io/revision":
+                continue
             all_text_sources.append((f"annotation key '{k}'", k))
             all_text_sources.append((f"annotation value '{v}'", v))
 
@@ -139,32 +141,38 @@ class AIDetector:
     def infer_owner(cls, msg: DiscoveryMessage) -> Tuple[str, str]:
         """
         Returns (owner_name, source) based on precedence:
-        1. aivar.io/owner annotation
-        2. owner/team/app labels
-        3. namespace metadata
-        4. service account metadata
+        1. aivar.io/owner annotation on workload
+        2. owner or team label on workload
+        3. aivar.io/owner or team label on namespace
+        4. service-account owner label or service account name
         5. "unassigned"
         """
-        # Precedence 1: Annotation
+        # Precedence 1: aivar.io/owner annotation on workload
         if "aivar.io/owner" in msg.annotations:
             return msg.annotations["aivar.io/owner"], "annotation:aivar.io/owner"
 
-        # Precedence 2: Labels
-        for label_key in ["owner", "team", "app"]:
+        # Precedence 2: owner or team label on workload
+        for label_key in ["owner", "team"]:
             if label_key in msg.labels:
                 return msg.labels[label_key], f"label:{label_key}"
 
-        # Precedence 3: Namespace
-        # Exclude defaults, extract specific teams
-        if msg.namespace not in ("default", "kube-system", "kube-public", "kube-node-lease"):
-            return msg.namespace, "namespace"
+        # Precedence 3: aivar.io/owner or team label on namespace
+        ns_labels = getattr(msg, "namespace_labels", {}) or {}
+        if "aivar.io/owner" in ns_labels:
+            return ns_labels["aivar.io/owner"], "namespace_annotation:aivar.io/owner"
+        if "team" in ns_labels:
+            return ns_labels["team"], "namespace_label:team"
 
-        # Precedence 4: Service Account
+        # Precedence 4: service-account owner label or service account name
+        for sa_label in ["service-account-owner", "service-account", "serviceaccount"]:
+            if sa_label in msg.labels:
+                return msg.labels[sa_label], f"label:{sa_label}"
         if msg.service_account_name and msg.service_account_name != "default":
             return msg.service_account_name, "service_account"
 
-        # Precedence 5: Default
-        return "unassigned", "default"
+        # Precedence 5: default
+        return "unassigned", "not_declared"
+
 
     @classmethod
     def calculate_risk(cls, msg: DiscoveryMessage) -> Tuple[RiskTier, List[str]]:

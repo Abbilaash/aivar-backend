@@ -8,13 +8,20 @@ logger = logging.getLogger(__name__)
 # - pool_size: 5 (conservative limit)
 # - max_overflow: 10
 # - pool_pre_ping: True (verifies connection validity before usage)
+from uuid import uuid4
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,
     future=True,
-    echo=False
+    echo=False,
+    connect_args={
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+        "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__"
+    }
 )
 
 AsyncSessionLocal = async_sessionmaker(
