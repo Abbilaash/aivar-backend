@@ -1,11 +1,11 @@
 fastapi==0.111.0
-uvicorn==0.30.1
-pydantic==2.7.4
-pydantic-settings==2.3.4
+uvicorn
+pydantic
+pydantic-settings
 sqlalchemy==2.0.31
-asyncpg==0.29.0
+asyncpg
 kubernetes==30.1.0
-
+greenlet
 PyYAML==6.0.1
 prometheus-client==0.20.0
 pytest==8.2.2

@@ -1,11 +1,11 @@
 # AIVAR — Autonomous AI Asset Registry Backend
 
-AIVAR automatically monitors Kubernetes workloads, detects AI-related deployments, scores risk, maintains a centralized asset inventory, records audit logs, and alerts for ownerless assets.
+AIVAR (AI Visibility & Asset Registry) automatically monitors Kubernetes workloads, detects AI-related deployments, scores risk, maintains a centralized asset inventory, records audit logs, and alerts for ownerless assets.
 
 ---
 
 ## Technical Stack
-- **Python**: 3.12
+- **Python**: 3.12 / 3.13 (Supports modern Python versions)
 - **Framework**: FastAPI (Asynchronous)
 - **Database ORM**: SQLAlchemy 2.0 Async ORM + asyncpg
 - **Monitoring**: Kubernetes Python client watcher & Prometheus metrics
@@ -14,9 +14,9 @@ AIVAR automatically monitors Kubernetes workloads, detects AI-related deployment
 ---
 
 ## Security Architecture & Secret Handling
-AIVAR enforces absolute privacy for sensitive Kubernetes credentials and application API-keys:
+AIVAR enforces absolute privacy for sensitive Kubernetes credentials and application API keys:
 - **No Secret Storage**: The database and application memory *never* store or log API key values, passwords, cluster token values, or Kubeconfig content.
-- **Safe Metadata Collection**: The Kubernetes Discovery Watcher only inspects non-secret metadata (workload names, namespaces, image references, labels, annotation keys, env variable names [excluding values], service account names, ConfigMap names, volume mount structure, etc.).
+- **Safe Metadata Collection**: The Kubernetes Discovery Watcher only inspects non-secret metadata (workload names, namespaces, image references, labels, annotation keys, environment variable names [excluding values], service account names, ConfigMap names, volume mount structure, etc.).
 - **API Key Protection**: Non-monitoring routes are guarded via the `X-API-Key` header with a developer mode bypass for local testing.
 
 ---
@@ -28,17 +28,51 @@ AIVAR connects to **Supabase PostgreSQL** using SQLAlchemy async engines.
 1. **Direct Connection (IPv6)**: Use when deploying in an environment that supports IPv6.
    `postgresql+asyncpg://postgres:[YOUR_DB_PASSWORD]@[YOUR_DB_HOST]:5432/postgres`
 2. **Session Pooler (Supavisor)**: Use in container/serverless environments with IPv4 fallbacks or dynamic connections.
-   `postgresql+asyncpg://postgres.[YOUR_PROJECT_REF]:[YOUR_DB_PASSWORD]@aws-0-us-west-1.pooler.supabase.com:5432/postgres`
+   `postgresql+asyncpg://postgres.[YOUR_PROJECT_REF]:[YOUR_DB_PASSWORD]@aws-0-us-west-1.pooler.supabase.com:6543/postgres?prepared_statement_cache_size=0`
 
 Configure this exclusively via the `DATABASE_URL` environment variable.
+
+---
+
+## Environment Variables (`.env`)
+
+AIVAR reads configurations using Pydantic Settings. Create a `.env` file in the root backend directory:
+
+```ini
+# Database Connection (Supabase PostgreSQL URL)
+DATABASE_URL=postgresql+asyncpg://postgres.[YOUR_PROJECT_REF]:[YOUR_DB_PASSWORD]@aws-0-us-west-1.pooler.supabase.com:6543/postgres?prepared_statement_cache_size=0
+
+# Application Settings
+APP_ENV=development # development, production
+LOG_LEVEL=INFO
+API_KEY=aivar-dev-secret-key-12345
+
+# Cluster Discovery Settings
+WATCHER_ENABLED=true
+CLUSTER_NAME=local-cluster
+CLUSTER_ENVIRONMENT=development
+
+# Reconciliation Intervals and Retry Settings
+RECONCILIATION_INTERVAL_SECS=60
+WATCHER_RETRY_DELAY_SECS=5
+WATCHER_MAX_RETRY_DELAY_SECS=60
+
+# EKS / Custom Kubeconfig configs (Optional)
+KUBECONFIG_PATH=
+AWS_REGION=
+EKS_CLUSTER_NAME=
+
+# AIVAR Copilot Chatbot (EKS Service)
+CHATBOT_SERVICE_URL=http://localhost:8081/chat
+```
 
 ---
 
 ## Local Run Instructions
 
 ### Prerequisites
-- Python 3.12
-- Docker and Docker Compose
+- Python 3.12 / 3.13
+- PostgreSQL Database (Local or Supabase)
 
 ### 1. Setup Local Environment
 Create `.env` based on `.env.example`:
@@ -50,14 +84,18 @@ Modify `DATABASE_URL` in `.env` to point to your Supabase PostgreSQL database.
 ### 2. Start Application Locally
 Initialize a virtual environment and install dependencies:
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+python3.13 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Run Alembic migrations to construct the database schema:
+Run migrations to construct the database schema:
 ```bash
+# Option A: Run Alembic migrations
 alembic upgrade head
+
+# Option B: Run via raw SQL editor on Supabase
+# Copy paste the statements in the backend/db_schema.sql into your SQL Editor.
 ```
 
 Launch the FastAPI application:
@@ -65,14 +103,6 @@ Launch the FastAPI application:
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 Open [http://localhost:8000/docs](http://localhost:8000/docs) in your browser to view the OpenAPI docs.
-
-### 3. Initialize Database Schema (Supabase)
-Instead of using Alembic locally, you can create all necessary tables directly in your Supabase project:
-1. Open your **Supabase Dashboard**.
-2. Select your project and navigate to the **SQL Editor** tab.
-3. Open the file [db_schema.sql](file:///a:/HACKATHONS/AIVAR%20Hackathon/backend/db_schema.sql).
-4. Copy the SQL statements and paste them into the Supabase SQL editor.
-5. Click **Run** to create the tables.
 
 ---
 
@@ -87,32 +117,53 @@ To run the backend application locally inside a container using Docker Compose:
 
 ---
 
-## Kubernetes Deployment Commands
+## Production Deployment on AWS EC2
+For production deployment, AIVAR is designed to be served behind an Nginx Reverse Proxy managed by Gunicorn process managers.
 
-### 1. Create the Secret
-Create the database credential secret directly in your cluster without saving the raw connection string to source control:
-```bash
-kubectl create secret generic aivar-backend-secrets \
-  --from-literal=DATABASE_URL="postgresql+asyncpg://postgres:[YOUR_DB_PASSWORD]@[YOUR_DB_HOST]:5432/postgres" \
-  --namespace default
+### 1. Deploy systemd Service (`/etc/systemd/system/aivar-backend.service`)
+```ini
+[Unit]
+Description=AIVAR Backend Service
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/aivar-backend
+EnvironmentFile=/home/ubuntu/aivar-backend/.env
+ExecStart=/home/ubuntu/aivar-backend/venv/bin/gunicorn app.main:app \
+          --workers 5 \
+          --worker-class uvicorn.workers.UvicornWorker \
+          --bind 127.0.0.1:8000 \
+          --access-logfile /var/log/aivar/access.log \
+          --error-logfile /var/log/aivar/error.log \
+          --keep-alive 55 \
+          --graceful-timeout 30
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-### 2. Deploy ConfigMap and RBAC rules
-```bash
-kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/rbac.yaml
-```
+### 2. Nginx Server Configuration (`/etc/nginx/sites-available/aivar-backend`)
+```nginx
+server {
+    listen 80;
+    server_name your-domain-or-ip;
 
-### 3. Run Database Migrations Job
-Apply the migration job first to align the schema:
-```bash
-kubectl apply -f k8s/migration-job.yaml
-```
-
-### 4. Deploy Application Deployment and Service
-```bash
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 ```
 
 ---
